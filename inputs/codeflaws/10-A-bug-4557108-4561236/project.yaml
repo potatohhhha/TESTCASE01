@@ -1,0 +1,15 @@
+project_id: 10-A-bug-4557108-4561236
+source_files:
+- source/10-A-4557108.c
+include_dirs: []
+requirements_file: requirements.md
+test_style: direct_main
+compiler:
+  standard: gnu11
+  flags:
+  - -Wall
+  - -Wextra
+  - -O0
+  - -g
+  link_flags:
+  - -lm

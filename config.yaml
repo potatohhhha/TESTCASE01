@@ -1,0 +1,11 @@
+docker:
+  image: llm-autotest-runner:latest
+  memory: 512m
+  nano_cpus: 1000000000
+  pids_limit: 64
+  container_timeout_seconds: 30
+test:
+  process_timeout_seconds: 5
+generation:
+  max_attempts: 3
+

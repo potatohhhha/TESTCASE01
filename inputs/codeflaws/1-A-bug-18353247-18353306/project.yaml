@@ -1,0 +1,15 @@
+project_id: 1-A-bug-18353247-18353306
+source_files:
+- source/1-A-18353247.c
+include_dirs: []
+requirements_file: requirements.md
+test_style: direct_main
+compiler:
+  standard: gnu11
+  flags:
+  - -Wall
+  - -Wextra
+  - -O0
+  - -g
+  link_flags:
+  - -lm

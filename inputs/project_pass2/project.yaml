@@ -1,0 +1,6 @@
+project_id: project_pass2
+source_files: [source/limit.c]
+include_dirs: [include]
+requirements_file: requirements.md
+mock_profile: pass
+compiler: {standard: c11, flags: [-Wall, -Wextra, -O0, -g]}

@@ -1,0 +1,6 @@
+project_id: project_fail
+source_files: [source/limit.c]
+include_dirs: [include]
+requirements_file: requirements.md
+mock_profile: fail
+compiler: {standard: c11, flags: [-Wall, -Wextra, -O0, -g]}
