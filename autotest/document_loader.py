@@ -1,3 +1,5 @@
+"""文件功能：读取 TXT、Markdown 和 DOCX 格式的需求文档。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,7 +14,7 @@ class Document:
 
 
 class DocumentLoader:
-    """Read requirement documents without interpreting their meaning."""
+    """读取需求文档，但不对文档内容作语义解释。"""
 
     TEXT_TYPES = {".txt": "txt", ".md": "markdown", ".markdown": "markdown"}
 

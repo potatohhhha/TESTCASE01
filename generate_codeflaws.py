@@ -1,3 +1,5 @@
+"""文件功能：按批次导入 Codeflaws 项目并调用大语言模型生成测试。"""
+
 from __future__ import annotations
 
 import argparse
@@ -15,6 +17,7 @@ ROOT = Path(__file__).resolve().parent
 
 
 def main() -> int:
+    """导入指定范围的 Codeflaws 数据，并按需生成测试。"""
     parser = argparse.ArgumentParser(description="Safely import and generate tests for selected Codeflaws tasks")
     parser.add_argument("--dataset-root", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=5)
@@ -23,6 +26,7 @@ def main() -> int:
     args = parser.parse_args()
     load_dotenv(ROOT / ".env")
 
+    # 通过 --offset 和 --limit 将大型数据集拆成范围明确的批次。
     importer = CodeflawsImporter(args.dataset_root, ROOT / "inputs" / "codeflaws")
     imported = importer.import_first(args.limit, args.offset)
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -31,6 +35,7 @@ def main() -> int:
     loader = ProjectLoader()
     generator = TestCaseGenerator(ROOT / "prompts" / "testcase_generation.md", max_attempts=3)
     summary = []
+    # 每个任务单独记录失败，确保同一批次中的其他任务仍可继续处理。
     for item in imported:
         record = {"project_id": item.project_folder.name, "status": "IMPORTED"}
         if not args.dry_run:

@@ -1,3 +1,5 @@
+"""文件功能：解析任务状态、JUnit XML 和日志，生成统一的测试结果。"""
+
 from __future__ import annotations
 
 import json
@@ -10,6 +12,7 @@ VALID = {"PASSED", "FAILED", "BUILD_FAILED", "TIMEOUT", "CRASHED", "GENERATION_F
 
 class ResultParser:
     def parse(self, output_dir: str | Path) -> dict[str, Any]:
+        """合并执行状态、生成元数据、JUnit XML 和文本日志。"""
         output = Path(output_dir)
         result_file = output / "result.json"
         raw = json.loads(result_file.read_text(encoding="utf-8")) if result_file.exists() else {
@@ -20,6 +23,8 @@ class ResultParser:
         metadata = json.loads(metadata_file.read_text(encoding="utf-8")) if metadata_file.exists() else {"testcases": []}
         xml_states: dict[str, tuple[str, str]] = {}
         xml_file = output / "test-results.xml"
+        # CMocka 函数名可能在用例 ID 外增加前后缀，因此按“名称包含 ID”关联
+        # 元数据，而不要求与 XML 中的名称完全相同。
         if xml_file.exists():
             try:
                 for case in ET.parse(xml_file).iterfind(".//testcase"):

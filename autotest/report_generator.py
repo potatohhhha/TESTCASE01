@@ -1,3 +1,5 @@
+"""文件功能：根据测试结果生成单项目报告和批次汇总 HTML 报告。"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,6 +31,8 @@ SUMMARY = """<!doctype html><html><head><meta charset="utf-8"><title>LLM-AutoTes
 
 class ReportGenerator:
     def __init__(self):
+        # LLM 输出和编译日志均不可信；自动转义可防止其中的内容在报告中
+        # 被浏览器当作 HTML 执行。
         self.environment = Environment(loader=BaseLoader(), autoescape=select_autoescape(["html", "xml"]))
 
     def project_report(self, project: Any, result: dict[str, Any], output_dir: str | Path) -> Path:

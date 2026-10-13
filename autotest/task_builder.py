@@ -1,3 +1,5 @@
+"""文件功能：为每个测试任务创建隔离的输入、构建和输出目录。"""
+
 from __future__ import annotations
 
 import json
@@ -25,12 +27,15 @@ class TaskBuilder:
 
     def build(self, project: Project, generated_dir: str | Path, output_dir: str | Path,
               run_id: str, test_timeout_seconds: float = 5) -> Task:
+        """为任务创建只读输入快照及可写的构建、输出目录。"""
         task_id = f"{project.project_id}-{uuid.uuid4().hex[:10]}"
         task_root = self.workspace_root / run_id / task_id
         input_dir, build_dir = task_root / "input", task_root / "build"
         output = Path(output_dir).resolve()
         for directory in (input_dir, build_dir, output):
             directory.mkdir(parents=True, exist_ok=False) if not directory.exists() else None
+        # 容器只接收复制后的快照，不直接挂载原始项目目录；文件名前缀还可
+        # 避免多个同名源文件发生冲突。
         source_names = []
         for index, source in enumerate(project.source_files):
             name = f"src_{index}_{source.name}"

@@ -1,3 +1,5 @@
+"""文件功能：验证 Docker 沙箱中的编译、执行、超时和并发链路。"""
+
 import os
 import subprocess
 import sys

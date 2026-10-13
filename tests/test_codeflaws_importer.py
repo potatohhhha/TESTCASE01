@@ -1,3 +1,5 @@
+"""文件功能：验证 Codeflaws 导入器只导入缺陷源码和公开需求。"""
+
 import json
 from pathlib import Path
 

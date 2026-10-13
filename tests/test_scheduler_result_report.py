@@ -1,3 +1,5 @@
+"""文件功能：验证任务调度、结果解析以及 HTML 报告生成。"""
+
 import json
 import time
 from pathlib import Path

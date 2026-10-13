@@ -1,3 +1,5 @@
+"""文件功能：读取并校验项目清单，将项目文件解析为统一的数据结构。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,6 +30,7 @@ class ProjectLoader:
 
     @staticmethod
     def _inside(root: Path, relative: str, kind: str) -> Path:
+        """解析清单中的路径，并拒绝越出项目根目录的路径。"""
         candidate = (root / relative).resolve()
         try:
             candidate.relative_to(root)
@@ -36,6 +39,7 @@ class ProjectLoader:
         return candidate
 
     def load(self, project_dir: str | Path) -> Project:
+        """校验 project.yaml，并返回解析后的可信项目路径。"""
         root = Path(project_dir).resolve()
         manifest = root / "project.yaml"
         if not manifest.is_file():
@@ -56,6 +60,8 @@ class ProjectLoader:
         for include in includes:
             if not include.is_dir():
                 raise ValueError(f"Include directory does not exist: {include}")
+        # 头文件内容会发送给生成器，因此需解析符号链接，并执行与源码、
+        # 需求文档相同的项目目录边界检查。
         headers = []
         for include in includes:
             for header in include.rglob("*.h"):

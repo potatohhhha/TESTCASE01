@@ -1,3 +1,5 @@
+"""文件功能：调用大语言模型生成测试用例和 CMocka 测试代码并进行校验。"""
+
 from __future__ import annotations
 
 import json
@@ -27,6 +29,7 @@ class GeneratedTests(BaseModel):
 
     @model_validator(mode="after")
     def unique_ids(self):
+        """保证元数据 ID 唯一，并可追溯到生成的 C 测试函数。"""
         ids = [case.testcase_id for case in self.testcases]
         if len(ids) != len(set(ids)):
             raise ValueError("testcase_id values must be unique")
@@ -51,6 +54,7 @@ PASS_CASES = [
 
 
 def mock_payload(profile: str) -> dict[str, Any]:
+    """构造确定性的 CMocka 固定数据，供本地及 CI 在不调用 LLM 时测试。"""
     cases = [{"testcase_id": i, "requirement_id": r, "description": d, "inputs": x,
               "expected": {"return_value": expected}, "unresolved": False}
              for i, r, d, x, expected in PASS_CASES]
@@ -84,6 +88,7 @@ class TestCaseGenerator:
         self.max_attempts = max_attempts
 
     def _prompt(self, project: Project) -> str:
+        """使用已校验的项目快照渲染提示词。"""
         template = Template(self.prompt_path.read_text(encoding="utf-8"))
         sources = "\n\n".join(f"--- {p.name} ---\n{p.read_text(encoding='utf-8')}" for p in project.source_files)
         headers = "\n\n".join(f"--- {p.name} ---\n{p.read_text(encoding='utf-8')}" for p in project.header_files)
@@ -93,6 +98,7 @@ class TestCaseGenerator:
 
     @staticmethod
     def _validate_for_project(generated: GeneratedTests, project: Project) -> None:
+        """拒绝违反当前调用模式约束的生成代码。"""
         if project.test_style == "function":
             return
         code = generated.test_code
@@ -106,6 +112,8 @@ class TestCaseGenerator:
             if missing:
                 raise ValueError(f"Console test code is missing safe process helper elements: {missing}")
         elif project.test_style == "direct_main":
+            # direct_main 必须在同一进程中调用重命名后的函数；若出现进程创建
+            # 相关函数，说明 LLM 没有遵守该调用约束。
             forbidden = ("fork", "pipe", "dup2", "execl", "execv", "waitpid", "system", "popen")
             used = [name for name in forbidden if re.search(rf"\b{name}\s*\(", code)]
             if "PROGRAM_UNDER_TEST" in code:
@@ -121,6 +129,7 @@ class TestCaseGenerator:
                 raise ValueError(f"{project.test_style} tests must not include the production source")
 
     def generate(self, project: Project, output_dir: str | Path, mock: bool = False) -> GeneratedTests:
+        """生成并校验测试用例元数据和 CMocka 代码，然后保存到磁盘。"""
         output = Path(output_dir)
         output.mkdir(parents=True, exist_ok=True)
         if mock:
@@ -132,6 +141,8 @@ class TestCaseGenerator:
             from openai import OpenAI
             client = OpenAI(api_key=api_key, base_url=os.getenv("LLM_BASE_URL") or None)
             last_error: Exception | None = None
+            # JSON 无效或代码未通过结构校验时允许重试；任何候选结果都必须
+            # 先通过校验，之后才能写入磁盘。
             for _ in range(self.max_attempts):
                 try:
                     response = client.chat.completions.create(

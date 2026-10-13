@@ -1,3 +1,5 @@
+"""文件功能：验证项目清单解析、路径边界检查和必要字段校验。"""
+
 from pathlib import Path
 
 import pytest

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Compile and execute one isolated CMocka task inside the runner image."""
+"""文件功能：在 Docker 执行镜像内编译并运行一个隔离的 CMocka 任务。"""
+
 from __future__ import annotations
 
 import json
@@ -16,10 +17,12 @@ BUILD = Path("/task/build")
 
 
 def write_json(data: dict) -> None:
+    """将机器可读的任务结果写入宿主机挂载的输出目录。"""
     (OUTPUT / "result.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def empty_junit(message: str) -> None:
+    """当 CMocka 未生成结果时，创建一个有效的 JUnit 文件。"""
     suite = ET.Element("testsuite", name="cmocka", tests="0", failures="0", errors="1")
     case = ET.SubElement(suite, "testcase", name="infrastructure")
     ET.SubElement(case, "error", message=message)
@@ -27,6 +30,7 @@ def empty_junit(message: str) -> None:
 
 
 def main() -> int:
+    """按选定调用模式编译、运行并导出全部结果文件。"""
     OUTPUT.mkdir(parents=True, exist_ok=True)
     BUILD.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
@@ -45,6 +49,8 @@ def main() -> int:
         commands.append([*common, "-include", "/opt/runner/cmocka_compat.h",
                          str(INPUT / "test_generated.c"), "-lcmocka", "-o", str(executable)])
     elif test_style == "direct_main":
+        # 只重命名被测源码编译单元中的 main；生成的测试代码保留自己的
+        # main()，并直接调用链接后的 codeflaws_main() 符号。
         objects = []
         for index, source in enumerate(sources):
             object_file = BUILD / f"subject_{index}.o"
@@ -74,6 +80,8 @@ def main() -> int:
                     "execution_returncode": None, "duration_seconds": time.monotonic() - started})
         return 0
 
+    # CMocka 将 XML 直接写入宿主机挂载的输出目录，同时单独保留标准输出
+    # 和标准错误，方便定位问题。
     env = os.environ.copy()
     env["CMOCKA_MESSAGE_OUTPUT"] = "XML"
     env["CMOCKA_XML_FILE"] = str(OUTPUT / "test-results.xml")

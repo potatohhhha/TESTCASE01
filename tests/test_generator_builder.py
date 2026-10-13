@@ -1,3 +1,5 @@
+"""文件功能：验证测试生成结果校验以及隔离任务目录的构建。"""
+
 import json
 from dataclasses import replace
 from pathlib import Path

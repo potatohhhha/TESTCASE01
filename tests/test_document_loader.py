@@ -1,3 +1,5 @@
+"""文件功能：验证不同格式需求文档的读取及异常处理。"""
+
 from pathlib import Path
 
 import pytest

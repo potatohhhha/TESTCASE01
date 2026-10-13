@@ -1,3 +1,5 @@
+"""文件功能：提供环境检查、测试生成、Docker 执行和报告输出的命令行入口。"""
+
 from __future__ import annotations
 
 import argparse
@@ -24,10 +26,12 @@ ROOT = Path(__file__).resolve().parent
 
 
 def configuration() -> dict:
+    """从仓库内的配置文件加载运行参数。"""
     return yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
 
 
 def check_environment() -> int:
+    """检查 Docker 服务是否可用，以及预构建的执行镜像是否存在。"""
     config = configuration()
     report = {"docker_service": False, "runner_image": False,
               "llm_api_key": bool(os.getenv("LLM_API_KEY")), "llm_model": os.getenv("LLM_MODEL")}
@@ -49,6 +53,7 @@ def check_environment() -> int:
 
 
 def generation_failure(output: Path, exc: Exception) -> None:
+    """生成失败时也写出与执行任务一致的结果文件。"""
     output.mkdir(parents=True, exist_ok=True)
     (output / "result.json").write_text(json.dumps({"status": "GENERATION_FAILED", "error": str(exc),
                                                      "duration_seconds": 0}, indent=2), encoding="utf-8")
@@ -62,6 +67,7 @@ def generation_failure(output: Path, exc: Exception) -> None:
 
 
 def execute(project_dirs: list[Path], workers: int, mock_llm: bool) -> int:
+    """生成测试、在 Docker 中执行，并为每个项目生成报告。"""
     config = configuration()
     run_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
     run_dir = ROOT / "results" / run_id
@@ -69,6 +75,8 @@ def execute(project_dirs: list[Path], workers: int, mock_llm: bool) -> int:
     loader, generator = ProjectLoader(), TestCaseGenerator(ROOT / "prompts" / "testcase_generation.md",
                                                             config["generation"]["max_attempts"])
     builder = TaskBuilder(ROOT / "workspace")
+    # 先完成生成再统一调度，使格式错误的 LLM 输出只影响当前项目，
+    # 不会阻止其他有效项目进入 Docker 执行。
     projects, tasks, failures = {}, [], []
     multi = len(project_dirs) > 1
     for project_dir in project_dirs:
@@ -114,7 +122,7 @@ def execute(project_dirs: list[Path], workers: int, mock_llm: bool) -> int:
 
 
 def execute_generated(generation_run: Path, workers: int) -> int:
-    """Execute a Codeflaws generation batch without making any LLM calls."""
+    """复用已有的 Codeflaws 生成批次执行测试，不再调用 LLM。"""
     generation_run = generation_run.resolve()
     summary_file = generation_run / "summary.json"
     if not summary_file.is_file():
@@ -130,6 +138,8 @@ def execute_generated(generation_run: Path, workers: int) -> int:
     loader, builder = ProjectLoader(), TaskBuilder(ROOT / "workspace")
     projects, tasks, setup_failures = {}, [], []
 
+    # 只有 GENERATED 记录可以执行；IMPORTED 和 GENERATION_FAILED 记录
+    # 仍保留在原始生成摘要中，便于追踪批次处理情况。
     for record in records:
         if not isinstance(record, dict) or record.get("status") != "GENERATED":
             continue
@@ -155,6 +165,8 @@ def execute_generated(generation_run: Path, workers: int) -> int:
                 raise ValueError(
                     f"Generated test style {recorded_style!r} does not match project style "
                     f"{project.test_style!r}; regenerate this batch")
+            # 按当前项目模式重新校验已保存的 LLM 产物，防止旧的 fork 模式
+            # 测试代码被误用于 direct_main 模式。
             validation_payload = {**generation_metadata,
                                   "test_code": (generated / "test_generated.c").read_text(encoding="utf-8")}
             generated_tests = GeneratedTests.model_validate(validation_payload)
@@ -217,6 +229,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """命令行入口：先加载环境变量，再选择运行模式。"""
     load_dotenv(ROOT / ".env")
     args = parse_args()
     if args.check_env:
