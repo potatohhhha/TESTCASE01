@@ -53,6 +53,25 @@ PASS_CASES = [
 ]
 
 
+def parse_json_object(content: str) -> dict[str, Any]:
+    """解析模型返回的 JSON 对象，并兼容被 Markdown 代码块包裹的结果。"""
+    text = content.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, count=1, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text, count=1)
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        # 部分兼容接口会在 JSON 前后添加解释文字；只提取最外层对象。
+        start, end = text.find("{"), text.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        value = json.loads(text[start:end + 1])
+    if not isinstance(value, dict):
+        raise ValueError(f"LLM response must be a JSON object, got {type(value).__name__}: {text[:120]!r}")
+    return value
+
+
 def mock_payload(profile: str) -> dict[str, Any]:
     """构造确定性的 CMocka 固定数据，供本地及 CI 在不调用 LLM 时测试。"""
     cases = [{"testcase_id": i, "requirement_id": r, "description": d, "inputs": x,
@@ -139,22 +158,53 @@ class TestCaseGenerator:
             if not api_key:
                 raise RuntimeError("LLM_API_KEY is required unless --mock-llm is used")
             from openai import OpenAI
-            client = OpenAI(api_key=api_key, base_url=os.getenv("LLM_BASE_URL") or None)
+            base_url = os.getenv("LLM_BASE_URL") or None
+            model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            messages = [
+                {"role": "system", "content": "Return exactly one valid JSON object and no other text."},
+                {"role": "user", "content": self._prompt(project)},
+            ]
+            request_options: dict[str, Any] = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": 16384,
+                "temperature": 0.2,
+            }
+            is_modelscope_qwen35 = (
+                base_url is not None
+                and "modelscope" in base_url.lower()
+                and model.lower().startswith("qwen/qwen3.5")
+            )
+            if is_modelscope_qwen35:
+                # Qwen3.5 默认输出思考内容。ModelScope 官方接口使用该参数关闭
+                # 思考模式，避免思考片段干扰严格 JSON 结果。
+                request_options["extra_body"] = {
+                    "top_k": 20,
+                    "chat_template_kwargs": {"enable_thinking": False},
+                }
+            else:
+                request_options["response_format"] = {"type": "json_object"}
             last_error: Exception | None = None
             # JSON 无效或代码未通过结构校验时允许重试；任何候选结果都必须
             # 先通过校验，之后才能写入磁盘。
-            for _ in range(self.max_attempts):
+            for attempt in range(self.max_attempts):
                 try:
-                    response = client.chat.completions.create(
-                        model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
-                        messages=[{"role": "user", "content": self._prompt(project)}],
-                        response_format={"type": "json_object"}, temperature=0)
-                    raw = json.loads(response.choices[0].message.content or "")
+                    response = client.chat.completions.create(**request_options)
+                    raw = parse_json_object(response.choices[0].message.content or "")
                     candidate = GeneratedTests.model_validate(raw)
                     self._validate_for_project(candidate, project)
                     break
                 except Exception as exc:
                     last_error = exc
+                    if attempt + 1 < self.max_attempts:
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "The previous response was invalid. Return the complete result again as one "
+                                f"JSON object matching the requested schema. Validation error: {exc}"
+                            ),
+                        })
             else:
                 raise RuntimeError(f"LLM did not return valid test JSON after {self.max_attempts} attempts: {last_error}")
         generated = GeneratedTests.model_validate(raw)

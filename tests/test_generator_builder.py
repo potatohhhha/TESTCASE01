@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from autotest.project_loader import ProjectLoader
 from autotest.task_builder import TaskBuilder
-from autotest.testcase_generator import GeneratedTests, TestCaseGenerator as Generator
+from autotest.testcase_generator import GeneratedTests, TestCaseGenerator as Generator, parse_json_object
 
 
 ROOT = Path(__file__).parents[1]
@@ -47,6 +47,12 @@ def test_validation_requires_testcase_id_in_resolved_function_name():
     }
     with pytest.raises(ValidationError, match="no C test function containing its ID"):
         GeneratedTests.model_validate(payload)
+
+
+def test_parse_json_object_accepts_fenced_object_and_rejects_array():
+    assert parse_json_object('```json\n{"testcases": [], "test_code": "code"}\n```')["test_code"] == "code"
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        parse_json_object("[0]")
 
 
 def test_direct_main_validation_rejects_process_helpers():
