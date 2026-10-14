@@ -1,4 +1,4 @@
-"""文件功能：从 Codeflaws 数据集中筛选并导入待测试的缺陷 C 项目。"""
+"""文件功能：从 Codeflaws 数据集中筛选项目，并默认导入每个项目的第一个 C 文件。"""
 
 from __future__ import annotations
 
@@ -11,18 +11,18 @@ from pathlib import Path
 import yaml
 
 
-FOLDER_PATTERN = re.compile(r"^(?P<prefix>.+)-bug-(?P<buggy>\d+)-(?P<accepted>\d+)$")
+FOLDER_PATTERN = re.compile(r"^.+-bug-\d+-\d+$")
 
 
 @dataclass(frozen=True)
 class ImportedCodeflawsProject:
     source_folder: Path
     project_folder: Path
-    buggy_source: Path
+    selected_source: Path
 
 
 class CodeflawsImporter:
-    """创建最小项目，不读取正确解答或基准答案。"""
+    """创建最小项目，只读取按文件名排序后的第一个 C 源文件。"""
 
     def __init__(self, dataset_root: str | Path, destination_root: str | Path):
         self.dataset_root = Path(dataset_root).resolve()
@@ -49,21 +49,26 @@ class CodeflawsImporter:
         return imported
 
     def import_one(self, source_folder: str | Path) -> ImportedCodeflawsProject:
-        """将缺陷源码和英文需求复制到最小项目中。"""
+        """将排序后的第一个 C 源文件和英文需求复制到最小项目中。"""
         source_folder = Path(source_folder).resolve()
         try:
             source_folder.relative_to(self.dataset_root)
         except ValueError as exc:
             raise ValueError(f"Task is outside the Codeflaws root: {source_folder}") from exc
-        match = FOLDER_PATTERN.fullmatch(source_folder.name)
-        if not match:
+        if not FOLDER_PATTERN.fullmatch(source_folder.name):
             raise ValueError(f"Invalid Codeflaws folder name: {source_folder.name}")
-        # 目录名虽然包含正确解答的 ID，但不会打开或复制对应源码和基准答案。
-        buggy_name = f"{match.group('prefix')}-{match.group('buggy')}.c"
-        buggy_source = source_folder / buggy_name
+        # 不根据目录名中的两个编号判断源码身份。目录内的 C 文件按名称排序，
+        # 当前默认选择第一个；其余 C 文件不会被读取或复制。
+        source_candidates = sorted(
+            (path for path in source_folder.iterdir()
+             if path.is_file() and path.suffix.lower() == ".c"),
+            key=lambda path: path.name.casefold(),
+        )
+        if not source_candidates:
+            raise FileNotFoundError(f"No C source file found in: {source_folder}")
+        selected_source = source_candidates[0]
+        selected_name = selected_source.name
         requirement_json = source_folder / "problem-description-en.json"
-        if not buggy_source.is_file():
-            raise FileNotFoundError(f"Buggy source is missing: {buggy_source}")
         if not requirement_json.is_file():
             raise FileNotFoundError(f"Requirement JSON is missing: {requirement_json}")
         requirement_data = json.loads(requirement_json.read_text(encoding="utf-8"))
@@ -74,13 +79,13 @@ class CodeflawsImporter:
         project_folder = self.destination_root / source_folder.name
         source_dir = project_folder / "source"
         source_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(buggy_source, source_dir / buggy_name)
+        shutil.copy2(selected_source, source_dir / selected_name)
         (project_folder / "requirements.md").write_text(description + "\n", encoding="utf-8")
         # direct_main 使用进程内调用：执行器在编译时重命名被测程序的 main，
         # 再将被测目标文件与测试代码链接到同一个可执行文件中。
         manifest = {
             "project_id": source_folder.name,
-            "source_files": [f"source/{buggy_name}"],
+            "source_files": [f"source/{selected_name}"],
             "include_dirs": [],
             "requirements_file": "requirements.md",
             "test_style": "direct_main",
@@ -92,4 +97,4 @@ class CodeflawsImporter:
         }
         (project_folder / "project.yaml").write_text(
             yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True), encoding="utf-8")
-        return ImportedCodeflawsProject(source_folder, project_folder, buggy_source)
+        return ImportedCodeflawsProject(source_folder, project_folder, selected_source)
